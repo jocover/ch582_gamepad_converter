@@ -239,8 +239,8 @@ void task_usb_hid(void* parameter)
             }
             SetUsb2Speed(1); // 默认为全速
         }
-        //With USB connection, data is updated at approximately 4-ms frequencies (250 times/second).
-        rt_thread_mdelay(4);
+
+        rt_thread_mdelay(1);
 
     }
 

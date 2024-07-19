@@ -92,7 +92,7 @@ static uint32_t axis_timing=0;
 static uint32_t last_report_timer = 0;
 
 static mbedtls_rsa_context pk;
-
+static rt_mutex_t usb_report_mutex = RT_NULL;
 
 void rsa_init(void){
 
@@ -500,6 +500,7 @@ void save_nonce(uint8_t nonce_id, uint8_t nonce_page, uint8_t *buffer, uint16_t 
 
 void usbd_hid_get_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t report_type, uint8_t **report_data, uint32_t *len){
 
+    rt_mutex_take(usb_report_mutex, RT_WAITING_FOREVER);
 
     if (report_type == HID_REPORT_INPUT){
 
@@ -559,6 +560,8 @@ void usbd_hid_get_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t
             break;
         }
     }
+
+    rt_mutex_release(usb_report_mutex);
 }
 
 
@@ -573,6 +576,7 @@ void usbd_hid_set_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t
     uint8_t nonce[56];
     uint16_t noncelen;
 
+    rt_mutex_take(usb_report_mutex, RT_WAITING_FOREVER);
 
     if(report_type==HID_REPORT_FEATURE ){
 
@@ -602,6 +606,8 @@ void usbd_hid_set_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t
         }
 
     }
+
+    rt_mutex_release(usb_report_mutex);
 }
 
 /* function ------------------------------------------------------------------*/
@@ -627,6 +633,9 @@ void ps4_driver_init(uint8_t busid, uint32_t reg_base)
 
     usbd_initialize(busid, reg_base, usbd_event_handler);
 
+    ps4_auth_state = no_nonce;
+    usb_report_mutex = rt_mutex_create("usb_report", RT_IPC_FLAG_FIFO);
+
 }
 
 
@@ -638,27 +647,28 @@ void ps4_driver_process(){
 
 void ps4_driver_report(uint8_t busid,hid_ps4_report_t * ps4_report){
 
-   uint32_t now=rt_tick_get();
+    rt_mutex_take(usb_report_mutex, RT_WAITING_FOREVER);
+    uint32_t now=rt_tick_get();
 
-   ps4_report->timestamp = axis_timing;
-   ps4_report->report_counter =report_counter;
+    ps4_report->timestamp = axis_timing;
+    ps4_report->report_counter =report_counter;
 
-   if (memcmp(last_report, ps4_report, sizeof(hid_ps4_report_t)) != 0){
+    if (memcmp(last_report, ps4_report, sizeof(hid_ps4_report_t)) != 0){
 
-       memcpy(last_report, ps4_report, sizeof(hid_ps4_report_t));
-       usbd_ep_start_write(busid, HIDRAW_IN_EP, last_report, sizeof(hid_ps4_report_t));
-       last_report_timer = now;
+        memcpy(last_report, ps4_report, sizeof(hid_ps4_report_t));
+        usbd_ep_start_write(busid, HIDRAW_IN_EP, last_report, sizeof(hid_ps4_report_t));
+        last_report_timer = now;
 
-   }else{
+    }else{
 
-       if ((now - last_report_timer) > PS4_KEEPALIVE_TIMER) {
-           report_counter = (report_counter+1) & 0x3F;
-           axis_timing = now;
-       }
+        if ((now - last_report_timer) > PS4_KEEPALIVE_TIMER) {
+            report_counter = (report_counter+1) & 0x3F;
+            axis_timing = now;
+        }
 
-   }
+    }
 
-
+    rt_mutex_release(usb_report_mutex);
 
 }
 
