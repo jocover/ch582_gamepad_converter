@@ -15,10 +15,10 @@
 
 #include <rtthread.h>
 ALIGN(RT_ALIGN_SIZE)
-static char rsa_sign_stack[1024];
+static char rsa_sign_stack[2048];
 static struct rt_thread rsa_sign_thread;
 
-static char usb_hid_stack[1024];
+static char usb_hid_stack[2048];
 static struct rt_thread usb_hid_thread;
 
 #define USB_BUSID 0x00
@@ -184,13 +184,31 @@ void task_usb_hid(void* parameter)
 
                         //触摸按钮 todo
                         ps4_report.button_touchpad=0;
+                        ps4_report.touchpad1_touches = (1 << 7);
+                        ps4_report.touchpad1_position[0]=0;
+                        ps4_report.touchpad1_position[1]=0;
+                        ps4_report.touchpad1_position[2]=0;
+
                         if(xinput->buttons1& 0x04){
 
+                            //touchpad resolution = 1920x942
+                            //480 x 471
                             ps4_report.button_touchpad=1;
+                            ps4_report.touchpad1_touches=1;
+                            ps4_report.touchpad1_position[0]=0xE0;
+                            ps4_report.touchpad1_position[1]=0x71;
+                            ps4_report.touchpad1_position[2]=0x1D;
+
                         }
                         if(xinput->buttons1& 0x20){
 
                             ps4_report.button_touchpad=1;
+                            ps4_report.touchpad1_touches=1;
+
+                            //1440 x 471
+                            ps4_report.touchpad1_position[0]=0xA0;
+                            ps4_report.touchpad1_position[1]=0x75;
+                            ps4_report.touchpad1_position[2]=0x1D;
                         }
 
 
@@ -221,7 +239,8 @@ void task_usb_hid(void* parameter)
             }
             SetUsb2Speed(1); // 默认为全速
         }
-        rt_thread_delay(1);
+        //With USB connection, data is updated at approximately 4-ms frequencies (250 times/second).
+        rt_thread_mdelay(4);
 
     }
 
