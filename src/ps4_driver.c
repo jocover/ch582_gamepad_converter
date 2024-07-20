@@ -87,8 +87,7 @@ USB_NOCACHE_RAM_SECTION USB_MEM_ALIGNX uint8_t last_report[64];
 
 static uint8_t hashed_nonce[32];
 
-static uint8_t report_counter = 0;
-static uint32_t axis_timing=0;
+static uint8_t last_report_counter  = 0;
 static uint32_t last_report_timer = 0;
 
 static mbedtls_rsa_context pk;
@@ -180,7 +179,7 @@ void sign_nonce(void) {
 /*!< hidraw in endpoint */
 #define HIDRAW_IN_EP       0x81
 #define HIDRAW_IN_EP_SIZE  64
-#define HIDRAW_IN_INTERVAL 5
+#define HIDRAW_IN_INTERVAL 1
 
 #define HIDRAW_OUT_EP          0x02
 #define HIDRAW_OUT_EP_SIZE     64
@@ -456,7 +455,7 @@ void usbd_event_handler(uint8_t busid, uint8_t event)
 static void usbd_hid_custom_in_callback(uint8_t busid, uint8_t ep, uint32_t nbytes)
 {
     //PRINT("actual in len:%d\r\n", nbytes);
-    custom_state = HID_STATE_IDLE;
+    rt_mutex_release(usb_report_mutex);
 }
 
 static void usbd_hid_custom_out_callback(uint8_t busid,uint8_t ep, uint32_t nbytes)
@@ -499,8 +498,6 @@ void save_nonce(uint8_t nonce_id, uint8_t nonce_page, uint8_t *buffer, uint16_t 
 }
 
 void usbd_hid_get_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t report_type, uint8_t **report_data, uint32_t *len){
-
-    rt_mutex_take(usb_report_mutex, RT_WAITING_FOREVER);
 
     if (report_type == HID_REPORT_INPUT){
 
@@ -561,7 +558,6 @@ void usbd_hid_get_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t
         }
     }
 
-    rt_mutex_release(usb_report_mutex);
 }
 
 
@@ -575,8 +571,6 @@ void usbd_hid_set_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t
 
     uint8_t nonce[56];
     uint16_t noncelen;
-
-    rt_mutex_take(usb_report_mutex, RT_WAITING_FOREVER);
 
     if(report_type==HID_REPORT_FEATURE ){
 
@@ -606,8 +600,6 @@ void usbd_hid_set_report(uint8_t busid, uint8_t intf, uint8_t report_id, uint8_t
         }
 
     }
-
-    rt_mutex_release(usb_report_mutex);
 }
 
 /* function ------------------------------------------------------------------*/
@@ -650,9 +642,6 @@ void ps4_driver_report(uint8_t busid,hid_ps4_report_t * ps4_report){
     rt_mutex_take(usb_report_mutex, RT_WAITING_FOREVER);
     uint32_t now=rt_tick_get();
 
-    ps4_report->timestamp = axis_timing;
-    ps4_report->report_counter =report_counter;
-
     if (memcmp(last_report, ps4_report, sizeof(hid_ps4_report_t)) != 0){
 
         memcpy(last_report, ps4_report, sizeof(hid_ps4_report_t));
@@ -662,13 +651,12 @@ void ps4_driver_report(uint8_t busid,hid_ps4_report_t * ps4_report){
     }else{
 
         if ((now - last_report_timer) > PS4_KEEPALIVE_TIMER) {
-            report_counter = (report_counter+1) & 0x3F;
-            axis_timing = now;
+            last_report_counter = (last_report_counter+1) & 0x3F;
+            ps4_report->report_counter =last_report_counter ;
+            ps4_report->timestamp = now;
         }
 
     }
-
-    rt_mutex_release(usb_report_mutex);
 
 }
 
